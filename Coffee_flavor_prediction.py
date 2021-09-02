@@ -211,7 +211,223 @@ lr.coef_
 lr.score(X, df2_clean.Acidity)
                    
 
-                   
+#######New subset dataset
+df3 = df[["Country.of.Origin", "Harvest.Year", "Variety", "Processing.Method", "Category.One.Defects", "Category.Two.Defects", "Quakers", "altitude_mean_meters", "Total.Cup.Points"]]
+df3 = df3.dropna()
+df3 = df3.reset_index()
 
+df3 = df3.drop("index", axis = 1)
+df3.head()                   
+
+#Building new dataset
+cleaned_df = df3.copy()
+cleaned_df.loc[cleaned_df["Harvest.Year"] == "2017 / 2018", "Harvest.Year"] = "2018"
+cleaned_df.loc[cleaned_df["Harvest.Year"] == "2016 / 2017", "Harvest.Year"] = "2017"
+cleaned_df.loc[cleaned_df["Harvest.Year"] == "2015/2016", "Harvest.Year"] = "2016"
+cleaned_df.loc[cleaned_df["Harvest.Year"] == "2014/2015", "Harvest.Year"] = "2015"
+cleaned_df.loc[cleaned_df["Harvest.Year"] == "2013/2014", "Harvest.Year"] = "2014"
+cleaned_df.loc[cleaned_df["Harvest.Year"] == "2011/2012", "Harvest.Year"] = "2012"
+
+
+a = cleaned_df['Country.of.Origin'].value_counts() <= 5
+b = cleaned_df['Country.of.Origin'].value_counts()
+for i in range(len(a.index)):
+    if(a[i]):
+        cleaned_df.loc[cleaned_df["Country.of.Origin"] == a.index[i], "Country.of.Origin"] = "Others"
+        
+        
+a = cleaned_df['Variety'].value_counts() <= 1
+b = cleaned_df['Variety'].value_counts()
+for i in range(len(a.index)):
+    if(a[i]):
+        cleaned_df.loc[cleaned_df["Variety"] == a.index[i], "Variety"] = "Others"
                    
+cleaned_df.drop(cleaned_df.loc[cleaned_df['altitude_mean_meters'] > 2000].index, inplace = True) 
+cleaned_df.drop(cleaned_df.loc[cleaned_df['altitude_mean_meters'] < 182].index, inplace = True) 
+
+
+cut_labels = ["Specialty", "Premium", "Exchange", "Below Standard"] # 1 = Specialty Grade, 2 = Premium Coffee Grade, 3 = Exchange Coffee Grade
+cut_bins = [-1, 3, 15, 23, 100]
+cleaned_df['Green.Beans.Grade'] = cleaned_df["Category.One.Defects"].values + cleaned_df["Category.Two.Defects"].values + cleaned_df["Quakers"].values
+cleaned_df['Green.Beans.Grade'] = pd.cut(cleaned_df['Green.Beans.Grade'], bins=cut_bins, labels=cut_labels)
+
+cut_labels = ["UGQ", "Premium", "Specialty"] # 1 = Specialty Quality, 2 = Premium Quality, 3 = Usually Good Quality
+cut_bins = [50, 80, 84, 90]
+cleaned_df['Cupping.Grade'] = pd.cut(cleaned_df['Total.Cup.Points'], bins=cut_bins, labels=cut_labels)
+#Plot
+model_df = cleaned_df[["Country.of.Origin", "Harvest.Year", "Variety", "Processing.Method", "Green.Beans.Grade", 'Cupping.Grade', "Category.One.Defects",	"Category.Two.Defects",	"Quakers"]]
+ax = sns.countplot(x="Cupping.Grade", data=model_df)
+ax.tick_params(labelsize=15)
+
+
+#Preporecessing
+from sklearn import preprocessing
+encoder = preprocessing.LabelEncoder()
+encode_df = model_df.copy()
+column_name = ["Country.of.Origin", "Harvest.Year", "Variety", "Processing.Method", "Green.Beans.Grade", 'Cupping.Grade']
+
+label = list()
+for i in range(0,6):
+    encoder.fit(encode_df[column_name[i]])
+    encode_df.loc[:,column_name[i]] = (encoder.transform(encode_df[column_name[i]]))
+    label.append(encoder.inverse_transform(encode_df[column_name[i]]))
+
+    unique, counts = np.unique(label[i], return_counts=True)
+    print(np.asarray((unique, counts)).T)
+    unique, counts = np.unique(encode_df.loc[:,column_name[i]], return_counts=True)
+    print(np.asarray((unique, counts)).T)
+
+
+#Spliting data test-train
+from sklearn.model_selection import train_test_split
+X = encode_df.drop("Cupping.Grade", axis = 1)
+Y = encode_df["Cupping.Grade"]
+# Split the data into training and testing sets
+x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size = 0.2, random_state = 1)
+
+print('Training Features Shape:', x_train.shape)
+print('Training Labels Shape:', y_train.shape)
+print('Testing Features Shape:', x_test.shape)
+print('Testing Labels Shape:', y_test.shape)
+
+#Random forest
+from sklearn.ensemble import RandomForestClassifier
+from sklearn import metrics
+# Instantiate model with 1000 decision trees
+
+
+x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size = 0.3, random_state = 9)
+rf = RandomForestClassifier(n_estimators = 30, random_state = 42)
+# Train the model on training data
+rf.fit(x_train, y_train)
+y_pred=rf.predict(x_test)
+
+print("Accuracy: %0.5f" % (metrics.accuracy_score(y_test, y_pred)))
+accuracy_score(y_test,y_pred)
+confusion_matrix(y_test, y_pred)
+
+
+#Visualization
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+
+
+cm = (confusion_matrix(y_test, y_pred))
+a = ["Premium", "Specialty", "UGQ"]
+
+sns.heatmap(cm, xticklabels = a, yticklabels = a,annot=True, fmt='g')
+print(classification_report(y_test, y_pred))
+
+#Ploting the matrix confusion result
+import scikitplot as skplt
+
+y_probas = rf.predict_proba(x_test)
+skplt.metrics.plot_roc_curve(y_test, y_probas)
+plt.show()
+
+
+#KNeightbors algo
+model2 = KNeighborsClassifier(n_neighbors=5)
+model2.fit(x_train, y_train)
+y_pred2 = model2.predict(x_test)
+confusion_matrix(y_test, y_pred2)
+
+#printing accuracy of the model
+accuracy_score(y_test, y_pred2)
+
+
+
+#Logistic regression
+model3 = LogisticRegression(max_iter=1e8)
+model3.fit(x_train, y_train)
+y_pred3 = model3.predict(x_test)
+confusion_matrix(y_test, y_pred3)
+
+accuracy_score(y_test, y_pred3)
+
+
+#Decision tree algo
+model4 = DecisionTreeClassifier()
+model4.fit(x_train, y_train)
+y_pred4 = model4.predict(x_test)
+#display(confusion_matrix(y_test, y_pred4))
+print('Accuracy is', accuracy_score(y_test, y_pred4))
+
+
+
+#Evaluation of the metric
+X_train, X_test, y_train, y_test = train_test_split(
+    df2_clean.drop('Acidity',axis=1), #X
+    df2_clean.Acidity,                #y
+    test_size=0.3,           
+    random_state=42,
+    )
+
+
+#columns I want
+sub_cols = {"Aroma","Flavor","Aftertaste","Acidity","Body","Balance","Uniformity","Total.Cup.Points"}
+
+y = df2_clean["Total.Cup.Points"]
+x = df2_clean.drop("Total.Cup.Points", axis=1)
+
+
+from sklearn import preprocessing
+from sklearn.metrics import mean_squared_error, r2_score
+
+
+## families are a broad type of model
+from sklearn.ensemble import RandomForestRegressor
+
+# cross validation tools
+#from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import GridSearchCV
+
+
+x_train, x_test, y_train, y_test = train_test_split(x, y, 
+                                                    test_size=0.2, # saves 20 percent to test
+                                                    random_state=123) #arbitrary 
+
+
+## defining a pipeline, takes care of scalar creation and model fit
+
+pipeline = make_pipeline(preprocessing.StandardScaler(), 
+                         RandomForestRegressor(n_estimators=100))
+
+# We can also list the tunable hyper parameters like this
+pipeline.get_params()
+
+
+#Declare Hyper parameters 
+## This should be saved in a dictionary
+## Note how to save keys with list values, i frequently forget this
+
+hyperparameters = { 
+    'randomforestregressor__max_features' : ['auto', 'sqrt', 'log2'],
+    'randomforestregressor__max_depth': [None, 5, 3, 1]
+}
+
+#searshing best model
+clf = GridSearchCV(pipeline, hyperparameters,cv=10) 
+clf.fit(x_train,y_train)
+
+clf.best_params_
+
+clf.refit
+
+y_pred = clf.predict(x_test)
+print(r2_score(y_test,y_pred))
+print(mean_squared_error(y_test,y_pred))
+
+
+x = range(0,len(y_pred))
+
+fig = plt.figure()
+plt.title('Predicted Coffee Quality Points')
+plt.plot(x, y_pred, color = 'm', label = 'Predicted Values')
+plt.plot(x, list(y_test), color = 'b', label = 'Test values')
+plt.axis([-10,len(y_pred),70,90])
+plt.legend(loc = 1)
+plt.savefig('comparaison')
+plt.show()
+
 
